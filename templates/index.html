@@ -1,0 +1,286 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Pinterest Board to PDF</title>
+    <style>
+        * { box-sizing: border-box; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            background: #f5f5f5;
+        }
+        h1 { color: #e60023; }
+        .form-group {
+            margin-bottom: 15px;
+        }
+        label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: 500;
+        }
+        input[type="text"], input[type="number"] {
+            width: 100%;
+            padding: 10px;
+            border: 1px solid #ddd;
+            border-radius: 8px;
+            font-size: 16px;
+        }
+        input[type="range"] {
+            width: 100%;
+        }
+        .slider-value {
+            display: inline-block;
+            min-width: 30px;
+            text-align: center;
+            font-weight: bold;
+        }
+        .checkbox-group {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        .checkbox-group input { width: auto; }
+        button {
+            background: #e60023;
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 24px;
+            font-size: 16px;
+            cursor: pointer;
+            width: 100%;
+        }
+        button:hover { background: #ad081b; }
+        button:disabled {
+            background: #ccc;
+            cursor: not-allowed;
+        }
+        .preview-section {
+            margin-top: 20px;
+            padding: 20px;
+            background: white;
+            border-radius: 12px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        }
+        .preview-container {
+            display: flex;
+            justify-content: center;
+            margin-top: 15px;
+        }
+        .preview-page {
+            width: 210px;
+            height: 297px;
+            background: white;
+            border: 1px solid #ccc;
+            position: relative;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+        }
+        .preview-cell {
+            position: absolute;
+            background: #f0f0f0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 10px;
+            color: #666;
+        }
+        .preview-cell.with-border {
+            border: 1px solid #000;
+        }
+        .result {
+            margin-top: 20px;
+            padding: 15px;
+            border-radius: 8px;
+        }
+        .result.success {
+            background: #d4edda;
+            color: #155724;
+            padding: 30px;
+            text-align: center;
+            font-size: 18px;
+        }
+        .result.success a {
+            display: inline-block;
+            margin-top: 15px;
+            background: #28a745;
+            color: white;
+            padding: 15px 40px;
+            border-radius: 24px;
+            text-decoration: none;
+            font-size: 20px;
+            font-weight: bold;
+        }
+        .result.success a:hover {
+            background: #218838;
+        }
+        .result.error {
+            background: #f8d7da;
+            color: #721c24;
+        }
+        .loading {
+            display: none;
+            text-align: center;
+            padding: 20px;
+        }
+        .loading.show { display: block; }
+        .spinner {
+            border: 3px solid #f3f3f3;
+            border-top: 3px solid #e60023;
+            border-radius: 50%;
+            width: 30px;
+            height: 30px;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 10px;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+    </style>
+</head>
+<body>
+    <h1>Pinterest Board to PDF</h1>
+
+    <form id="pdfForm">
+        <div class="form-group">
+            <label for="url">Pinterest Board URL</label>
+            <input type="text" id="url" placeholder="https://www.pinterest.com/username/board/" required>
+        </div>
+
+        <div class="form-group">
+            <label for="num_images">Number of Images</label>
+            <input type="number" id="num_images" value="10" min="1" max="100">
+        </div>
+
+        <div class="form-group">
+            <label>Columns: <span id="colValue" class="slider-value">2</span></label>
+            <input type="range" id="images_in_row" min="1" max="5" value="2">
+        </div>
+
+        <div class="form-group">
+            <label>Rows: <span id="rowValue" class="slider-value">3</span></label>
+            <input type="range" id="images_in_col" min="1" max="6" value="3">
+        </div>
+
+        <div class="form-group">
+            <label>Margin: <span id="marginValue" class="slider-value">5</span>mm</label>
+            <input type="range" id="margin" min="0" max="15" value="5">
+        </div>
+
+        <div class="form-group checkbox-group">
+            <input type="checkbox" id="draw_borders" checked>
+            <label for="draw_borders">Draw Borders</label>
+        </div>
+
+        <div class="preview-section">
+            <strong>Preview Layout</strong>
+            <div class="preview-container">
+                <div class="preview-page" id="previewPage"></div>
+            </div>
+        </div>
+
+        <button type="submit" id="submitBtn">Export PDF</button>
+    </form>
+
+    <div class="loading" id="loading">
+        <div class="spinner"></div>
+        <div>Downloading images and generating PDF...</div>
+    </div>
+
+    <div id="result"></div>
+
+    <script>
+        const colSlider = document.getElementById('images_in_row');
+        const rowSlider = document.getElementById('images_in_col');
+        const marginSlider = document.getElementById('margin');
+        const bordersCheckbox = document.getElementById('draw_borders');
+        const previewPage = document.getElementById('previewPage');
+
+        function updatePreview() {
+            const cols = parseInt(colSlider.value);
+            const rows = parseInt(rowSlider.value);
+            const margin = parseInt(marginSlider.value);
+            const drawBorders = bordersCheckbox.checked;
+
+            document.getElementById('colValue').textContent = cols;
+            document.getElementById('rowValue').textContent = rows;
+            document.getElementById('marginValue').textContent = margin;
+
+            const pageWidth = 210;
+            const pageHeight = 297;
+            const marginPx = (margin / 210) * pageWidth;
+
+            const cellWidth = pageWidth / cols;
+            const cellHeight = pageHeight / rows;
+
+            previewPage.innerHTML = '';
+
+            for (let row = 0; row < rows; row++) {
+                for (let col = 0; col < cols; col++) {
+                    const cell = document.createElement('div');
+                    cell.className = 'preview-cell' + (drawBorders ? ' with-border' : '');
+                    cell.style.left = (col * cellWidth + marginPx) + 'px';
+                    cell.style.top = (row * cellHeight + marginPx) + 'px';
+                    cell.style.width = (cellWidth - 2 * marginPx) + 'px';
+                    cell.style.height = (cellHeight - 2 * marginPx) + 'px';
+                    cell.textContent = (row * cols + col + 1);
+                    previewPage.appendChild(cell);
+                }
+            }
+        }
+
+        colSlider.addEventListener('input', updatePreview);
+        rowSlider.addEventListener('input', updatePreview);
+        marginSlider.addEventListener('input', updatePreview);
+        bordersCheckbox.addEventListener('change', updatePreview);
+
+        updatePreview();
+
+        document.getElementById('pdfForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+
+            const submitBtn = document.getElementById('submitBtn');
+            const loading = document.getElementById('loading');
+            const result = document.getElementById('result');
+
+            submitBtn.disabled = true;
+            loading.classList.add('show');
+            result.innerHTML = '';
+
+            const data = {
+                url: document.getElementById('url').value,
+                num_images: parseInt(document.getElementById('num_images').value),
+                images_in_row: parseInt(colSlider.value),
+                images_in_col: parseInt(rowSlider.value),
+                margin: parseInt(marginSlider.value),
+                draw_borders: bordersCheckbox.checked
+            };
+
+            try {
+                const response = await fetch('/api/generate', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(data)
+                });
+
+                const json = await response.json();
+
+                if (json.success) {
+                    result.innerHTML = `<div class="result success">PDF created successfully!<br><a href="${json.pdf_path}" target="_blank">Download PDF</a></div>`;
+                } else {
+                    result.innerHTML = `<div class="result error">Error: ${json.error}</div>`;
+                }
+            } catch (err) {
+                result.innerHTML = `<div class="result error">Error: ${err.message}</div>`;
+            } finally {
+                submitBtn.disabled = false;
+                loading.classList.remove('show');
+            }
+        });
+    </script>
+</body>
+</html>

@@ -1,0 +1,4 @@
+pinterest-dl
+python-dotenv
+fpdf2
+flask
