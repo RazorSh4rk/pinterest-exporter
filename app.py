@@ -3,12 +3,15 @@ import math
 import time
 import shutil
 import re
-from flask import Flask, request, jsonify, send_from_directory, render_template
+from flask import Flask, request, jsonify, render_template
 from pinterest_dl import PinterestDL
 from fpdf import FPDF
 from scale_img import scale_and_position_image, FpdfBoundingBox
+import b2
 
 app = Flask(__name__, static_folder='static', template_folder='templates')
+
+b2.setup()
 
 BASE_DIR = "/app"
 IMAGES_BASE = os.path.join(BASE_DIR, "images")
@@ -91,7 +94,15 @@ def generate_pdf(url, num_images, draw_borders, images_in_row, images_in_col, ma
         pdf_path = os.path.join(pdf_folder, pdf_name)
         pdf.output(pdf_path)
 
-        return f"{folder_name}/{pdf_name}"
+        # Upload to B2 and get download URL
+        remote_name = f"{folder_name}/{pdf_name}"
+        b2.upload_file(pdf_path, remote_name)
+        download_url = b2.get_download_url(remote_name)
+
+        # Cleanup local PDF
+        os.remove(pdf_path)
+
+        return download_url
 
     finally:
         # Cleanup images
@@ -115,19 +126,14 @@ def api_generate():
         images_in_col = int(data.get('images_in_col', 3))
         margin = float(data.get('margin', 5))
 
-        pdf_path = generate_pdf(url, num_images, draw_borders, images_in_row, images_in_col, margin)
+        download_url = generate_pdf(url, num_images, draw_borders, images_in_row, images_in_col, margin)
 
-        return jsonify({'success': True, 'pdf_path': f'/pdfs/{pdf_path}'})
+        return jsonify({'success': True, 'pdf_path': download_url})
 
     except Exception as e:
         import traceback
         traceback.print_exc()
         return jsonify({'success': False, 'error': str(e)}), 400
-
-
-@app.route('/pdfs/<path:filename>')
-def serve_pdf(filename):
-    return send_from_directory(PDFS_BASE, filename)
 
 
 if __name__ == '__main__':
