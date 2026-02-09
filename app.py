@@ -41,13 +41,23 @@ def generate_pdf(url, num_images, draw_borders, images_in_row, images_in_col, ma
     os.makedirs(pdf_folder, exist_ok=True)
 
     try:
-        PinterestDL.with_api().scrape_and_download(
+        # Use longer delay for large batches to avoid rate limiting
+        delay = 0.5 if num_images > 50 else 0.2
+
+        PinterestDL.with_api(max_retries=5).scrape_and_download(
             url=url,
             output_dir=img_folder,
-            num=num_images
+            num=num_images,
+            delay=delay
         )
 
-        images = [f for f in os.listdir(img_folder) if os.path.isfile(os.path.join(img_folder, f))]
+        # Filter for valid image files only (exclude videos, etc.)
+        valid_extensions = {'.jpg', '.jpeg', '.png', '.gif', '.webp'}
+        images = [
+            f for f in os.listdir(img_folder)
+            if os.path.isfile(os.path.join(img_folder, f))
+            and os.path.splitext(f)[1].lower() in valid_extensions
+        ]
 
         if not images:
             raise ValueError("No images downloaded")
@@ -110,6 +120,8 @@ def api_generate():
         return jsonify({'success': True, 'pdf_path': f'/pdfs/{pdf_path}'})
 
     except Exception as e:
+        import traceback
+        traceback.print_exc()
         return jsonify({'success': False, 'error': str(e)}), 400
 
 
